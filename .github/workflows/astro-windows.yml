@@ -1,0 +1,156 @@
+name: Astro Bot - latest Windows with mip fix
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "Upstream branch, tag or commit (main = newest)"
+        default: "main"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  SCCACHE_GHA_ENABLED: "true"
+  KYTY_BUILD_ORIGIN: "Fork"
+  KYTY_BUILD_REPOSITORY: ${{ github.repository }}
+
+jobs:
+  windows:
+    name: Build KytyPS5 (Windows)
+    runs-on: windows-2025
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: KytyPS5/KytyPS5
+          ref: ${{ inputs.upstream_ref }}
+          submodules: recursive
+
+      - name: Apply verified Astro Bot mip fix
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+          p = Path("src/graphics/host_gpu/renderer/pipeline/descriptors.cpp")
+          old = "static bool ResolveTextureMipView(ImageInfo& info, uint32_t physical_levels, bool metadata,\n                                  uint32_t view_levels, uint32_t& base_level) {\n\tif (!info.IsTiled()) {\n\t\treturn false;\n\t}\n\tImageInfo physical = info;\n\t// A view entirely past MAX_MIP addresses its own chain starting at its base mip (PPSA02110\n\t// compresses mip 1 through a T# that declares one level).\n\tif (base_level >= physical_levels) {\n\t\tconst auto mip  = info.MipExtent(base_level);\n\t\tphysical.extent = {mip.width, mip.height, info.IsVolume() ? mip.depth : 1u};\n\t\tphysical_levels = view_levels;\n\t}\n\tphysical.resources.levels = physical_levels;\n\tphysical.UpdateSize();\n\tinfo.UpdateSize();\n\tconst auto same_mip = [&](uint32_t target, uint32_t source) {\n\t\treturn physical.mip_layout[target] == info.mip_layout[source] &&\n\t\t       physical.MipExtent(target) == info.MipExtent(source);\n\t};\n\tif (physical.first_tail_level == info.first_tail_level &&\n\t    physical.tiled_slice_stride == info.tiled_slice_stride &&\n\t    physical.data.size == info.data.size) {\n\t\tbool matches = true;\n\t\tfor (uint32_t level = 0; level < physical_levels; ++level) {\n\t\t\tmatches &= same_mip(level, level);\n\t\t}\n\t\tif (matches) {\n\t\t\treturn true;\n\t\t}\n\t}\n\tif (metadata ||\n\t    (info.TransferLayers() > 1 && physical.tiled_slice_stride != info.tiled_slice_stride)) {\n\t\treturn false;\n\t}\n\t// T# addresses the last mip. A view can select the same stored subresources\n\t// with different mip indices; inaccessible mips need no host representation.\n\tfor (uint32_t base = 0; base + view_levels <= physical_levels; ++base) {\n\t\tbool matches = true;\n\t\tfor (uint32_t i = 0; i < view_levels; ++i) {\n\t\t\tconst auto source = base_level + i;\n\t\t\tconst auto target = base + i;\n\t\t\tif (!same_mip(target, source) ||\n\t\t\t    (target >= physical.first_tail_level) != (source >= info.first_tail_level)) {\n\t\t\t\tmatches = false;\n\t\t\t\tbreak;\n\t\t\t}\n\t\t}\n\t\tif (matches) {\n\t\t\tinfo       = std::move(physical);\n\t\t\tbase_level = base;\n\t\t\treturn true;\n\t\t}\n\t}\n\treturn false;\n}\n\n"
+          new = "static bool MatchTextureMipView(ImageInfo& info, ImageInfo physical, uint32_t physical_levels,\n                                bool metadata, uint32_t view_levels, uint32_t& base_level) {\n\tphysical.resources.levels = physical_levels;\n\tphysical.UpdateSize();\n\tinfo.UpdateSize();\n\tconst auto same_mip = [&](uint32_t target, uint32_t source) {\n\t\treturn physical.mip_layout[target] == info.mip_layout[source] &&\n\t\t       physical.MipExtent(target) == info.MipExtent(source);\n\t};\n\tif (physical.first_tail_level == info.first_tail_level &&\n\t    physical.tiled_slice_stride == info.tiled_slice_stride &&\n\t    physical.data.size == info.data.size) {\n\t\tbool matches = true;\n\t\tfor (uint32_t level = 0; level < physical_levels; ++level) {\n\t\t\tmatches &= same_mip(level, level);\n\t\t}\n\t\tif (matches) {\n\t\t\treturn true;\n\t\t}\n\t}\n\tif (metadata ||\n\t    (info.TransferLayers() > 1 && physical.tiled_slice_stride != info.tiled_slice_stride)) {\n\t\treturn false;\n\t}\n\t// T# addresses the last mip. A view can select the same stored subresources\n\t// with different mip indices; inaccessible mips need no host representation.\n\tfor (uint32_t base = 0; base + view_levels <= physical_levels; ++base) {\n\t\tbool matches = true;\n\t\tfor (uint32_t i = 0; i < view_levels; ++i) {\n\t\t\tconst auto source = base_level + i;\n\t\t\tconst auto target = base + i;\n\t\t\tif (!same_mip(target, source) ||\n\t\t\t    (target >= physical.first_tail_level) != (source >= info.first_tail_level)) {\n\t\t\t\tmatches = false;\n\t\t\t\tbreak;\n\t\t\t}\n\t\t}\n\t\tif (matches) {\n\t\t\tinfo       = std::move(physical);\n\t\t\tbase_level = base;\n\t\t\treturn true;\n\t\t}\n\t}\n\treturn false;\n}\n\nstatic bool ResolveTextureMipView(ImageInfo& info, uint32_t physical_levels, bool metadata,\n                                  uint32_t view_levels, uint32_t& base_level) {\n\tif (!info.IsTiled()) {\n\t\treturn false;\n\t}\n\tconst ImageInfo declared = info;\n\tif (MatchTextureMipView(info, declared, physical_levels, metadata, view_levels, base_level)) {\n\t\treturn true;\n\t}\n\tif (base_level < physical_levels) {\n\t\treturn false;\n\t}\n\t// A view entirely past MAX_MIP addresses its own chain starting at its base mip (PPSA02110\n\t// compresses mip 1 through a T# that declares one level).\n\tImageInfo  physical = declared;\n\tconst auto mip      = declared.MipExtent(base_level);\n\tphysical.extent     = {mip.width, mip.height, declared.IsVolume() ? mip.depth : 1u};\n\treturn MatchTextureMipView(info, physical, view_levels, metadata, view_levels, base_level);\n}\n\n"
+          source = p.read_text(encoding="utf-8")
+          if source.count(old) == 1:
+              p.write_text(source.replace(old, new, 1), encoding="utf-8", newline="\n")
+              print("Applied PR #2172 port, preserving current mip-layout equality.")
+          elif source.count(new) == 1:
+              print("Exact port already present.")
+          else:
+              raise SystemExit("Source changed: manual review required; refusing an unverified patch.")
+          print("Upstream revision:", subprocess.check_output(["git","rev-parse","HEAD"], text=True).strip())
+          subprocess.run(["git","diff","--check"], check=True)
+          subprocess.run(["git","diff","--stat"], check=True)
+
+      - name: Setup Visual Studio environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Use the Clang that ships with Visual Studio
+        shell: pwsh
+        run: |
+          Join-Path $env:VCINSTALLDIR "Tools\Llvm\x64\bin" |
+            Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Locate vcpkg
+        id: vcpkg
+        shell: pwsh
+        run: |
+          $vcpkgRoot = Split-Path (Get-Command vcpkg).Source
+          $portHash = (Get-FileHash "$vcpkgRoot\ports\glslang\vcpkg.json" -Algorithm SHA256).Hash
+          "root=$vcpkgRoot" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "port_hash=$($portHash.ToLowerInvariant())" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Cache glslang
+        id: glslang_cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.vcpkg.outputs.root }}\installed\x64-windows
+          key: glslang-${{ runner.os }}-${{ runner.arch }}-${{ steps.vcpkg.outputs.port_hash }}-tools-opt
+
+      - name: Install glslang
+        shell: pwsh
+        run: |
+          $vcpkgRoot = "${{ steps.vcpkg.outputs.root }}"
+          if ("${{ steps.glslang_cache.outputs.cache-hit }}" -ne "true") {
+            vcpkg install glslang[tools,opt]:x64-windows
+          }
+          "$vcpkgRoot\installed\x64-windows\tools\glslang" |
+            Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Install Qt 6.10.3
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.10.3"
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Verify toolchain
+        shell: cmd
+        run: |
+          git --version
+          cmake --version
+          ninja --version
+          clang-cl --version
+          glslangValidator --version
+          echo Qt6_DIR=%Qt6_DIR%
+
+      - name: Configure
+        shell: cmd
+        run: |
+          cmake -S . -B _Build/windows ^
+            -G Ninja ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON ^
+            -DKYTY_BUILD_ORIGIN=%KYTY_BUILD_ORIGIN% ^
+            -DKYTY_BUILD_REPOSITORY=%KYTY_BUILD_REPOSITORY% ^
+            -DKYTY_RELEASE_TAG=AstroBot-${{ github.run_number }} ^
+            -DCMAKE_C_COMPILER=clang-cl ^
+            -DCMAKE_CXX_COMPILER=clang-cl ^
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache ^
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache ^
+            -DCMAKE_PREFIX_PATH="%Qt6_DIR%"
+
+      - name: Build
+        shell: cmd
+        run: |
+          cmake --build _Build/windows --target launcher ^
+            audio_out2_port_tests ngs2_sampler_tests pad_haptics_tests controller_settings_tests host_input_tests ime_dialog_tests lru_cache_tests virtual_memory_allocation_tests ^
+            shader_recompiler_compute_tests ^
+            resource_tracking_tests scalar_provenance_tests ^
+            resource_materialization_tests shader_vertex_metadata_tests archive_file_tests avplayer_file_tests ^
+            memory_tracker_tests page_manager_tests image_page_table_tests bit_array_tests build_flags_tests ^
+            event_queue_lifetime_tests sync_on_address_tests save_data_memory_tests trophy_system_tests ^
+            audio_out_timing_tests ajm_resample_tests png_enc_tests jpeg_dec_tests jpeg_enc_tests occlusion_queries_tests ces_tests save_data_dialog_tests psml_tests --parallel
+
+      - name: Test
+        shell: cmd
+        run: |
+          ctest --test-dir _Build/windows --output-on-failure -R "^(audio_out2_port|ngs2_sampler|pad_haptics|controller_settings|host_input|ime_dialog|lru_cache|resource_tracking|scalar_provenance|resource_materialization|shader_vertex_metadata|archive_file|avplayer_file|virtual_memory_allocation|memory_tracker|page_manager|image_page_table|bit_array|build_flags|event_queue_lifetime|sync_on_address|save_data_memory|trophy_system|audio_out_timing|ajm_resample|png_enc|jpeg_dec|jpeg_enc|occlusion_queries|ces|save_data_dialog|psml)$"
+
+      - name: Install
+        shell: cmd
+        run: |
+          cmake --install _Build/windows --prefix _Build/windows/install
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: KytyPS5-Windows-x64
+          path: _Build/windows/install/**
+          if-no-files-found: error
+
