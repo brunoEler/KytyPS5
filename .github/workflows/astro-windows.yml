@@ -1,3 +1,7 @@
+# Created by ChatGPT / OpenAI Codex at brunoEler's request.
+# Original graphics fix: Nawid3333, https://github.com/KytyPS5/KytyPS5/pull/2172
+# brunoEler is the requester and repository owner, not the fix's author.
+# Adapted from the upstream KytyPS5 Windows build workflow; upstream licenses apply.
 name: Astro Bot - latest Windows with mip fix
 
 on:
