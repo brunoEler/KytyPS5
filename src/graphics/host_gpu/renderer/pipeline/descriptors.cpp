@@ -418,6 +418,10 @@ static ImageViewInfo TextureViewInfo(const ShaderRecompiler::IR::ImageResource& 
 	return view;
 }
 
+// Astro Bot mip-view fix originally authored by Nawid3333 in KytyPS5/KytyPS5 PR #2172.
+// https://github.com/KytyPS5/KytyPS5/pull/2172 (head 81d29d43cb151883949d5f0cfd3c1d1a3bf80e13)
+// Ported to a21fd80 by ChatGPT / OpenAI Codex at brunoEler's request.
+// brunoEler is the requester, not the author of this fix or its AI-made adaptation.
 static bool MatchTextureMipView(ImageInfo& info, ImageInfo physical, uint32_t physical_levels,
                                 bool metadata, uint32_t view_levels, uint32_t& base_level) {
 	physical.resources.levels = physical_levels;
