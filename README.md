@@ -1,5 +1,20 @@
 # KytyPS5
 
+> [!NOTE]
+> **About this fork / Sobre este fork**
+>
+> This fork was configured and modified by **ChatGPT / OpenAI Codex**, at **brunoEler's request**.
+> The original Astro Bot mip-view fix is by **Nawid3333**, in [upstream PR #2172](https://github.com/KytyPS5/KytyPS5/pull/2172), head `81d29d43cb151883949d5f0cfd3c1d1a3bf80e13`.
+> Original test build: [GitHub Actions run 43278578608](https://github.com/KytyPS5/KytyPS5/actions/runs/43278578608).
+> **brunoEler is the requester and fork owner; the fix is not his original work.**
+>
+> ChatGPT/Codex ported that existing fix to upstream `a21fd80`, preserved the newer mip-layout equality comparison, and created the guarded Windows build workflow. These are AI-made adaptations of existing work, not an independently discovered fix.
+> Patch application was checked locally; this fork's compiled binary has not yet been validated in-game. Reports and test results from the original PR belong to its contributors.
+>
+> **Português:** este fork e suas adaptações foram feitos pelo **ChatGPT/Codex**, a pedido de **brunoEler**. A correção original é de **Nawid3333 (PR #2172)**. Bruno não é o autor da correção nem das adaptações feitas pela IA. Ainda falta validar esta compilação no jogo.
+>
+> Upstream KytyPS5/Kyty authorship and license notices remain applicable.
+
 [![Build KytyPS5 (Windows)](https://img.shields.io/github/check-runs/KytyPS5/KytyPS5/main?nameFilter=Build%20KytyPS5%20%28Windows%29&label=Build%20KytyPS5%20%28Windows%29)](https://github.com/KytyPS5/KytyPS5/actions/workflows/build.yml)
 [![Build KytyPS5 (Linux)](https://img.shields.io/github/check-runs/KytyPS5/KytyPS5/main?nameFilter=Build%20KytyPS5%20%28Linux%29&label=Build%20KytyPS5%20%28Linux%29)](https://github.com/KytyPS5/KytyPS5/actions/workflows/build.yml)
 [![Build KytyPS5 (macOS)](https://img.shields.io/github/check-runs/KytyPS5/KytyPS5/main?nameFilter=Build%20KytyPS5%20%28macOS%29&label=Build%20KytyPS5%20%28macOS%29)](https://github.com/KytyPS5/KytyPS5/actions/workflows/build.yml)
