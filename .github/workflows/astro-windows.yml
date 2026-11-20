@@ -63,33 +63,33 @@ jobs:
           Join-Path $env:VCINSTALLDIR "Tools\Llvm\x64\bin" |
             Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-      - name: Locate vcpkg
-        id: vcpkg
+      - name: Download official prebuilt glslang
         shell: pwsh
         run: |
-          $vcpkgRoot = Split-Path (Get-Command vcpkg).Source
-          $portHash = (Get-FileHash "$vcpkgRoot\ports\glslang\vcpkg.json" -Algorithm SHA256).Hash
-          "root=$vcpkgRoot" |
-            Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "port_hash=$($portHash.ToLowerInvariant())" |
-            Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
-      - name: Cache glslang
-        id: glslang_cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.vcpkg.outputs.root }}\installed\x64-windows
-          key: glslang-${{ runner.os }}-${{ runner.arch }}-${{ steps.vcpkg.outputs.port_hash }}-tools-opt
-
-      - name: Install glslang
-        shell: pwsh
-        run: |
-          $vcpkgRoot = "${{ steps.vcpkg.outputs.root }}"
-          if ("${{ steps.glslang_cache.outputs.cache-hit }}" -ne "true") {
-            vcpkg install glslang[tools,opt]:x64-windows
+          $ErrorActionPreference = "Stop"
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/KhronosGroup/glslang/releases/tags/main-tot"
+          $asset = @($release.assets | Where-Object name -eq "glslang-main-windows-x86_64-release.zip")
+          if ($asset.Count -ne 1) { throw "Official Windows x64 glslang asset not found." }
+          if ($asset[0].digest -notmatch '^sha256:([0-9a-fA-F]{64})$') { throw "Official asset has no SHA-256 digest." }
+          $expected = $Matches[1]
+          $archive = Join-Path $env:RUNNER_TEMP "glslang-official.zip"
+          $installDir = Join-Path $env:RUNNER_TEMP "glslang-official"
+          Invoke-WebRequest -Uri $asset[0].browser_download_url -OutFile $archive
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+          if ($actual -ne $expected) { throw "glslang archive SHA-256 mismatch." }
+          Expand-Archive -LiteralPath $archive -DestinationPath $installDir -Force
+          $validator = Get-ChildItem -LiteralPath $installDir -Recurse -File -Filter glslangValidator.exe | Select-Object -First 1
+          if (-not $validator) {
+            $compiler = Get-ChildItem -LiteralPath $installDir -Recurse -File -Filter glslang.exe | Select-Object -First 1
+            if (-not $compiler) { throw "Official archive contains no glslang executable." }
+            Copy-Item -LiteralPath $compiler.FullName -Destination (Join-Path $compiler.DirectoryName "glslangValidator.exe")
+            $validator = Get-Item -LiteralPath (Join-Path $compiler.DirectoryName "glslangValidator.exe")
           }
-          "$vcpkgRoot\installed\x64-windows\tools\glslang" |
-            Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $validator.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          Write-Host "Official asset: $($asset[0].browser_download_url)"
+          Write-Host "Verified SHA-256: $actual"
+          & $validator.FullName --version
+          if ($LASTEXITCODE -ne 0) { throw "glslang version check failed." }
 
       - name: Install Qt 6.10.3
         uses: jurplel/install-qt-action@v4
